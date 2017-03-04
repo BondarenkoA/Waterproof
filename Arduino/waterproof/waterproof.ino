@@ -2,10 +2,10 @@
 
 #define POWER_DIVIDER 2.0775//коэффициент делителя напряжения для определения напряжения питания. r1/(r1+r2)
 
-byte powerPin = A3;
-//int sensorPin1 = A7;    // select the input pin 
-byte sensorPowerA = A1; //Pin A of sensor power
-byte sensorPowerB = A2; //Pin B of sensor power
+byte powerPin = A1;
+
+byte sensorPowerA = 11; //Pin A of sensor power
+byte sensorPowerB = 12; //Pin B of sensor power
 byte beeperPin = A0; //Pin beeper
 byte motorPin1 = 2; //Pin B of sensor power
 
@@ -21,10 +21,12 @@ byte beep = 0;
 
 byte alarm = 0;
 
-TM1638 dysplayModule(10, 9, 8);
+TM1638 dysplayModule(10, 9, 8); //TM1638(dataPin, clockPin, strobePin, activateDisplay, intensity);
 
 void setup() {
-  // put your setup code here, to run once:
+
+  pinMode(powerPin, INPUT);
+  
   pinMode(ledPin, OUTPUT);
   
   pinMode(sensorPowerA, OUTPUT);
@@ -78,7 +80,7 @@ void loop() {
     delay(200);
     dysplayModule.setLED(TM1638_COLOR_NONE, 0);
     
-    tone(beeperPin, 2000, 300);
+    tone(beeperPin, 8000, 50);
     
   }
 
