@@ -1,8 +1,10 @@
 #include <TM1638.h>
+#include "button.h"
 
 #define POWER_DIVIDER 2.0775//коэффициент делителя напряжения для определения напряжения питания. r1/(r1+r2)
 #define WATER_THRESOLD 50 //чуствительность датчиков воды
-#define MAX_SENSOR_VAL 1024
+#define BATTERY_THRESOLD 1100 //уровень напряжения считающийся низким, и приводящий к аварийному перекрытию кранов и т.д.
+#define MAX_SENSOR_VAL 1023
 
 #define SERIAL_RATE 115200
 
@@ -46,6 +48,7 @@ byte g_led13_PIN              = 13;      // select the pin for the LED
 
 
 byte g_state = STAND_BY;
+byte g_old_state = STAND_BY;
 int g_pow_U = 0;
 byte g_water_sensors_val = 0;
 
@@ -57,6 +60,9 @@ byte g_water_sensors_Phase = 0;
 
 TM1638 dysplayModule(7, 6, 5); //TM1638(dataPin, clockPin, strobePin, activateDisplay, intensity);
 
+//**************************************************************************************************
+// Инициализация
+//**************************************************************************************************
 void setup() {
 
   for(int i = 0; i < COUNT_OF_SENSORS; i++) pinMode(g_water_sensor_PIN[i], INPUT);
@@ -79,6 +85,9 @@ void setup() {
   dysplayModule.setupDisplay(true, 0);
 }
 
+//**************************************************************************************************
+// Основной цикл
+//**************************************************************************************************
 void loop() {
   
   read_input();
@@ -89,26 +98,17 @@ void loop() {
 
   output();
 
-//--------------------------------------------  
-  counter++;
-
+  digitalWrite(g_led13_PIN, HIGH); delay(1);
+  digitalWrite(g_led13_PIN, LOW);
   
-  if ( alarm )
-  {
-    dysplayModule.setLED(TM1638_COLOR_RED, 0);
-    delay(200);
-    dysplayModule.setLED(TM1638_COLOR_NONE, 0);
-    
-    tone(g_beeper_PIN, 8000, 50);
-    
-  }
-
-   digitalWrite(g_led13_PIN, HIGH); delay(50);
-   digitalWrite(g_led13_PIN, LOW); delay(100);
-
-   delay(500);
+  delay(100);
 }
 
+
+
+//**************************************************************************************************
+// read_input() обработка входящей информации(датчики, кнопки, команды и.т.д.) 
+//**************************************************************************************************
 void read_input(){
   
   SERIAL_PRINTLN("> read_input()");
@@ -130,23 +130,67 @@ void read_input(){
 
   g_pow_U = powerReadX100();
   SERIAL_PRINT("Pow U = "); SERIAL_PRINTLN( (float)g_pow_U / 100 );
-  dysplayModule.setDisplayToDecNumber(g_pow_U, 0b00000100, false);
   
 //кнопки
 }
 
+//**************************************************************************************************
+// determine_state()
+//**************************************************************************************************
 void determine_state(){
   SERIAL_PRINTLN("> determine_state()");
+
+  g_old_state = g_state;
+
+  if (g_water_sensors_val){
+    g_state = g_state | WATER_ALARM;
+  }else{
+    g_state = g_state & ~WATER_ALARM;
+  }
 }
 
+//**************************************************************************************************
+// process()
+//**************************************************************************************************
 void process(){
   SERIAL_PRINTLN("> process()");
+
+  if (g_state & WATER_ALARM){
+    digitalWrite(g_valve1_PIN, LOW);
+    digitalWrite(g_valve2_PIN, LOW);
+  }else{
+    digitalWrite(g_valve1_PIN, HIGH);
+    digitalWrite(g_valve2_PIN, HIGH);
+  }
 }
 
+//**************************************************************************************************
+// output()
+//**************************************************************************************************
 void output(){
+  char str_disp[8];
+  
   SERIAL_PRINTLN("> output()");
+  
+  sprintf(str_disp, "BAT %4d", g_pow_U);
+  //dysplayModule.setDisplayToDecNumber(g_pow_U, 0b00000100, false);
+  dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
+
+  if (g_state & WATER_ALARM){
+    
+    tone(g_beeper_PIN, 800, 50);
+    
+    dysplayModule.setLEDs(g_water_sensors_val);
+    delay(100);
+    dysplayModule.setLEDs(0x00);
+    
+  }
+  
 }
 
+//**************************************************************************************************
+// int sensor_read(byte sensorNum) Считывание датчика воды
+//**************************************************************************************************
 int sensor_read(byte sensorNum){
 
   int val = 0;
@@ -168,8 +212,11 @@ int sensor_read(byte sensorNum){
   return val;
 }
 
+//**************************************************************************************************
+// int powerReadX100() Определение напряжения питания х100(умножаем на 100 чтобы целым числом хранить сотые доли)
+//**************************************************************************************************
 int powerReadX100(){
-  #define SAMPLES_COUNT 50 //количество считываний напряжения батерии для усреднения
+  #define SAMPLES_COUNT 50 //количество считываний напряжения для усреднения
   int rawU = 0;
 
   for(int i = 0; i < SAMPLES_COUNT; i++){
