@@ -60,6 +60,8 @@ byte g_water_sensors_Phase = 0;
 
 TM1638 dysplayModule(7, 6, 5); //TM1638(dataPin, clockPin, strobePin, activateDisplay, intensity);
 
+TM1638_Button btn_mode(&dysplayModule, 0b10000000);
+
 //**************************************************************************************************
 // Инициализация
 //**************************************************************************************************
@@ -101,7 +103,7 @@ void loop() {
   digitalWrite(g_led13_PIN, HIGH); delay(1);
   digitalWrite(g_led13_PIN, LOW);
   
-  delay(100);
+  delay(1000);
 }
 
 
@@ -132,6 +134,7 @@ void read_input(){
   SERIAL_PRINT("Pow U = "); SERIAL_PRINTLN( (float)g_pow_U / 100 );
   
 //кнопки
+  btn_mode.Loop();
 }
 
 //**************************************************************************************************
@@ -176,15 +179,19 @@ void output(){
   //dysplayModule.setDisplayToDecNumber(g_pow_U, 0b00000100, false);
   dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
 
+  SERIAL_PRINTLN(dysplayModule.getButtons());
+  if (btn_mode.state == BTN_ON_HOLD) dysplayModule.setLED(TM1638_COLOR_RED, 6);;
+  
   if (g_state & WATER_ALARM){
     
-    tone(g_beeper_PIN, 800, 50);
+    tone(g_beeper_PIN, 400, 50);
     
     dysplayModule.setLEDs(g_water_sensors_val);
     delay(100);
     dysplayModule.setLEDs(0x00);
     
   }
+
   
 }
 

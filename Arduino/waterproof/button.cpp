@@ -5,24 +5,23 @@
  * Кнопка это цифровой пин подтянутый к питанию и замыкаемый на землю
  * Событие срабатывания происходит по нажатию кнопки (возвращается 1)
  * и отпусканию кнопки (возвращается время нажатия кнопки, мсек)
- * tm1 - таймаут дребезга контактов. По умолчанию 50мс
- * tm2 - время длинного нажатия клавиши. По умолчанию 2000мс
+ * time_bounce_in - таймаут дребезга контактов. По умолчанию 50мс
+ * time_long_click_in - время длинного нажатия клавиши. По умолчанию 2000мс. Если 0 то отключено.
  */
-SButton::SButton(uint8_t pin,uint16_t tm1, uint16_t tm2){
+My_Button::My_Button(uint8_t pin,uint16_t time_bounce_in, uint16_t time_long_click_in){
    Pin               = pin;
-   state_is_pressed             = false;
-   Long_press_state  = false;
-   Ms1               = 0;
-   Ms2               = 0;
-   Ms_auto_click     = 0;
-   TM_bounce         = tm1;
-   TM_long_click     = tm2;
+   state_is_pressed  = false;
+   state_is_long_pressed  = false;
+   time_of_last_release               = 0;
+   time_of_last_press               = 0;
+   time_bounce         = time_bounce_in;
+   time_long_click     = time_long_click_in;
 }
 
 /**
  * Инициализация кнопки
  */
-void SButton::begin() {
+void My_Button::begin() {
    pinMode(Pin, INPUT_PULLUP);
 #ifdef DEBUG_SERIAL_BTN      
    Serial.print("Init button pin ");
@@ -30,52 +29,71 @@ void SButton::begin() {
 #endif      
 }
 
+
 /**
  * Действие производимое в цикле или по таймеру
- * возвращает SB_NONE если кнопка не нажата и событие нажатие или динного нажатия кнопки
+ * возвращает BTN_NONE если кнопка не нажата и событие нажатие или динного нажатия кнопки
 */
-SBUTTON_CLICK SButton::Loop() {
-   uint16_t delta_t = 0;
-   uint32_t ms = millis();
-   bool pin_state = digitalRead(Pin);
-   
-// Фиксируем нажатие кнопки 
-   if( pin_state == LOW && state_is_pressed == false && (ms-Ms1) > TM_bounce ){
-       delta_t = ms - Ms1;
-       Long_press_state = false;
+void My_Button::Loop() {
+   uint32_t current_time = millis();
+   bool pin_state = get_btn_state();
+
 #ifdef DEBUG_SERIAL_BTN      
-       Serial.print(">>>Event button, pin=");Serial.print(Pin);Serial.print(",press ON, tm=");Serial.print(delta_t);Serial.println(" ms");
-#endif      
+       Serial.print(">>>Loop, pin=");Serial.println(Pin);
+#endif
+
+   if( pin_state == LOW  // Фиксируем нажатие кнопки ---------------------------------------
+       && !state_is_pressed 
+       && (current_time - time_of_last_release) > time_bounce ){
+        
+#ifdef DEBUG_SERIAL_BTN      
+       Serial.print(">>>Event button, pin=");Serial.print(Pin);Serial.print(",press ON, tm=");Serial.print(current_time - time_of_last_release);Serial.println(" ms");
+#endif    
+       state_is_long_pressed = false;  
        state_is_pressed = true;
-       Ms2    = ms;
-       if( TM_long_click == 0 )return SB_CLICK;
-   }
+       time_of_last_press    = current_time;
 
-// Фиксируем длинное нажатие кнопки   
-   if( pin_state == LOW && !Long_press_state && TM_long_click > 0 && ( ms - Ms2 )>TM_long_click ){
-      delta_t = ms - Ms2;
-      Long_press_state = true;
-#ifdef DEBUG_SERIAL_BTN      
-      Serial.print(">>>Event button, pin=");Serial.print(Pin);Serial.print(",long press, tm=");Serial.print(delta_t);Serial.println(" ms");
-#endif 
-      return SB_LONG_CLICK;
-   }
+       state = BTN_ON_PRESS;
 
-   
-// Фиксируем отпускание кнопки 
-   if( pin_state == HIGH && state_is_pressed == true  && (ms-Ms2) > TM_bounce ){
-       delta_t = ms - Ms2;
+       return;
+   }
+  
+   if( pin_state == LOW // Фиксируем длинное нажатие кнопки -----------------------------------
+       && !state_is_long_pressed 
+       && time_long_click > 0 
+       && (current_time - time_of_last_press) > time_long_click ){
       
-       state_is_pressed = false;
 #ifdef DEBUG_SERIAL_BTN      
-       Serial.print(">>>Event button, pin=");Serial.print(Pin);Serial.print(",press OFF, tm=");Serial.print(delta_t);Serial.println(" ms");
+      Serial.print(">>>Event button, pin=");Serial.print(Pin);Serial.print(",long press, tm=");Serial.print(current_time - time_of_last_press);Serial.println(" ms");
 #endif 
-      Ms1    = ms;
-// Возвращаем короткий клик      
-      if( (TM_long_click != 0 ) && !Long_press_state )return SB_CLICK;
+      state_is_long_pressed = true;
+      
+      state = BTN_ON_HOLD;
+
+      return;
+   }
+
+   if( pin_state == HIGH // Фиксируем отпускание кнопки ------------------------------------------
+       && state_is_pressed == true  
+       && (current_time - time_of_last_press) > time_bounce ){
+        
+#ifdef DEBUG_SERIAL_BTN      
+       Serial.print(">>>Event button, pin=");Serial.print(Pin);Serial.print(",press OFF, tm=");Serial.print(current_time - time_of_last_press);Serial.println(" ms");
+#endif    
+       state_is_pressed = false;
+       time_of_last_release    = current_time;
+
+       if( time_long_click == 0 || 
+           (current_time - time_of_last_press) < time_long_click ){  
+          state = BTN_ON_CLICK;
+       }else{
+          state = BTN_RELEASE;
+       }
+
+       return;
        
    }
 
-   return SB_NONE;
+   state = BTN_NONE;
 }     
 
