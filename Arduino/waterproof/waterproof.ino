@@ -2,13 +2,14 @@
 #include "button.h"
 
 #define POWER_DIVIDER 2.0775//коэффициент делителя напряжения для определения напряжения питания. r1/(r1+r2)
-#define WATER_THRESOLD 50 //чуствительность датчиков воды
+#define WATER_THRESOLD 100 //чуствительность датчиков воды
 #define BATTERY_THRESOLD 1100 //уровень напряжения считающийся низким, и приводящий к аварийному перекрытию кранов и т.д.
 #define MAX_SENSOR_VAL 1023
+#define COUNT_OF_SENSORS 4
 
 #define SERIAL_RATE 115200
 
-#define SERIAL_LOGGING //использования логгирования в COM-порт
+//#define SERIAL_LOGGING //использования логгирования в COM-порт
 #ifdef SERIAL_LOGGING
 
   #define SERIAL_LOG_BEGIN Serial.begin(SERIAL_RATE);\
@@ -21,9 +22,9 @@
 #else
   #define SERIAL_LOG_BEGIN
   #define SERIAL_PRINTLN(A)
-  #define SERIAL_PRINTLN(A,B)
+  #define SERIAL_PRINTLN2(A,B)
   #define SERIAL_PRINT(A)
-  #define SERIAL_PRINT(A,B)
+  #define SERIAL_PRINT2(A,B)
 #endif
 
 
@@ -35,7 +36,14 @@
 #define LOW_BATTERY       0b00110000
 #define MANUAL_CONTROL    0b11000000
 
-#define COUNT_OF_SENSORS 4
+typedef enum {
+   DYS_BAT = 1,
+   DYS_SENS = 2,
+   DYS_UP_TIME = 3,
+   DYS_NONE = 4 //должно быть последним режимом, иначе кольцо не сработает
+}DYSPLAY_MODE;
+
+
 
 byte g_power_sensor_PIN       = A1;//пин АЦП для считывания делителя вх. напряжения
 byte g_water_sensors_PhA_PIN  = 11; //Фаза A питания датчиков воды
@@ -51,6 +59,8 @@ byte g_state = STAND_BY;
 byte g_old_state = STAND_BY;
 int g_pow_U = 0;
 byte g_water_sensors_val = 0;
+DYSPLAY_MODE g_dysplay_mode = DYS_BAT;
+byte g_dysplay_sensor_num = 1;
 
 int counter = 0;
 byte beep = 0;
@@ -60,7 +70,8 @@ byte g_water_sensors_Phase = 0;
 
 TM1638 dysplayModule(7, 6, 5); //TM1638(dataPin, clockPin, strobePin, activateDisplay, intensity);
 
-TM1638_Button btn_mode(&dysplayModule, 0b10000000);
+TM1638_Button btn_sel_dysplay_mode(&dysplayModule, 0b00000001);
+TM1638_Button btn_sel_sensor(&dysplayModule, 0b00000010);
 
 //**************************************************************************************************
 // Инициализация
@@ -103,7 +114,7 @@ void loop() {
   digitalWrite(g_led13_PIN, HIGH); delay(1);
   digitalWrite(g_led13_PIN, LOW);
   
-  delay(1000);
+  delay(1);
 }
 
 
@@ -134,7 +145,8 @@ void read_input(){
   SERIAL_PRINT("Pow U = "); SERIAL_PRINTLN( (float)g_pow_U / 100 );
   
 //кнопки
-  btn_mode.Loop();
+  btn_sel_dysplay_mode.process();
+  btn_sel_sensor.process();
 }
 
 //**************************************************************************************************
@@ -164,6 +176,21 @@ void process(){
   }else{
     digitalWrite(g_valve1_PIN, HIGH);
     digitalWrite(g_valve2_PIN, HIGH);
+  };
+
+  if (btn_sel_dysplay_mode.state & BTN_ON_CLICK){
+      if (g_dysplay_mode == DYS_NONE)
+        g_dysplay_mode = DYS_BAT;
+      else
+        g_dysplay_mode = g_dysplay_mode + 1;
+              
+      SERIAL_PRINT("g_dysplay_mode = ");
+      SERIAL_PRINTLN(g_dysplay_mode);
+  }
+
+  if (btn_sel_sensor.state & BTN_ON_CLICK){
+    g_dysplay_sensor_num++;
+    if(g_dysplay_sensor_num > COUNT_OF_SENSORS ) g_dysplay_sensor_num = 1;
   }
 }
 
@@ -171,16 +198,32 @@ void process(){
 // output()
 //**************************************************************************************************
 void output(){
-  char str_disp[8];
+  char str_disp[8] = "";
   
   SERIAL_PRINTLN("> output()");
-  
-  sprintf(str_disp, "BAT %4d", g_pow_U);
-  //dysplayModule.setDisplayToDecNumber(g_pow_U, 0b00000100, false);
-  dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
 
-  SERIAL_PRINTLN(dysplayModule.getButtons());
-  if (btn_mode.state == BTN_ON_HOLD) dysplayModule.setLED(TM1638_COLOR_RED, 6);;
+  switch (g_dysplay_mode){
+    case DYS_BAT: sprintf(str_disp, "BAT %4d", g_pow_U);
+                  dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
+                  break;
+    case DYS_SENS: sprintf(str_disp, "S-%1d %4d", g_dysplay_sensor_num, sensor_read(g_dysplay_sensor_num));
+                  dysplayModule.setDisplayToString(str_disp, 0b00000000, 0);
+                  break;
+    case DYS_UP_TIME: sprintf(str_disp, "t %6d", millis() / 1000);
+                  dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
+                  break;
+    case DYS_NONE: dysplayModule.clearDisplay();
+                  break;
+  }
+
+  
+  
+  if (btn_sel_dysplay_mode.state & BTN_ON_PRESS) dysplayModule.setLEDs(0b00001111);//debug string
+  if (btn_sel_dysplay_mode.state & BTN_RELEASE){ //debug string
+    dysplayModule.setLEDs(0x00);
+  }
+
+  
   
   if (g_state & WATER_ALARM){
     
@@ -199,21 +242,25 @@ void output(){
 // int sensor_read(byte sensorNum) Считывание датчика воды
 //**************************************************************************************************
 int sensor_read(byte sensorNum){
-
+  #define SAMPLES_COUNT 20 //количество считываний напряжения для усреднения
   int val = 0;
+
+  for(int i = 0; i < SAMPLES_COUNT; i++){
+    g_water_sensors_Phase = !g_water_sensors_Phase;
+    
+    digitalWrite(g_water_sensors_PhA_PIN, g_water_sensors_Phase);
+    digitalWrite(g_water_sensors_PhB_PIN, !g_water_sensors_Phase);
   
-  g_water_sensors_Phase = !g_water_sensors_Phase;
-  
-  digitalWrite(g_water_sensors_PhA_PIN, g_water_sensors_Phase);
-  digitalWrite(g_water_sensors_PhB_PIN, !g_water_sensors_Phase);
-
-  val = analogRead(g_water_sensor_PIN[sensorNum-1]);
-
-  digitalWrite(g_water_sensors_PhB_PIN, g_water_sensors_Phase);
-
-  if(!g_water_sensors_Phase) {//если фаза отрицательная - инвертируем значение датчика, т.к. поменялась полярность 
-    val = MAX_SENSOR_VAL - val;  
+    if(!g_water_sensors_Phase) {//если фаза отрицательная - инвертируем значение датчика, т.к. поменялась полярность 
+      val += MAX_SENSOR_VAL - analogRead(g_water_sensor_PIN[sensorNum-1]);  
+    }else{
+      val += analogRead(g_water_sensor_PIN[sensorNum-1]);
+    }
+    
+    digitalWrite(g_water_sensors_PhB_PIN, g_water_sensors_Phase);
   }
+
+  val = val / SAMPLES_COUNT;
   
   SERIAL_PRINT("Sensor");SERIAL_PRINT(sensorNum);SERIAL_PRINT(" = ");SERIAL_PRINTLN(val);
   return val;

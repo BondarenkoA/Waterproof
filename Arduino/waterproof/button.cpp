@@ -18,29 +18,14 @@ My_Button::My_Button(uint8_t pin,uint16_t time_bounce_in, uint16_t time_long_cli
    time_long_click     = time_long_click_in;
 }
 
-/**
- * Инициализация кнопки
- */
-void My_Button::begin() {
-   pinMode(Pin, INPUT_PULLUP);
-#ifdef DEBUG_SERIAL_BTN      
-   Serial.print("Init button pin ");
-   Serial.println(Pin);
-#endif      
-}
-
 
 /**
  * Действие производимое в цикле или по таймеру
  * возвращает BTN_NONE если кнопка не нажата и событие нажатие или динного нажатия кнопки
 */
-void My_Button::Loop() {
+void My_Button::process() {
    uint32_t current_time = millis();
    bool pin_state = get_btn_state();
-
-#ifdef DEBUG_SERIAL_BTN      
-       Serial.print(">>>Loop, pin=");Serial.println(Pin);
-#endif
 
    if( pin_state == LOW  // Фиксируем нажатие кнопки ---------------------------------------
        && !state_is_pressed 
@@ -85,7 +70,7 @@ void My_Button::Loop() {
 
        if( time_long_click == 0 || 
            (current_time - time_of_last_press) < time_long_click ){  
-          state = BTN_ON_CLICK;
+          state = BTN_ON_CLICK | BTN_RELEASE;
        }else{
           state = BTN_RELEASE;
        }

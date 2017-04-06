@@ -3,14 +3,14 @@
 #include "Arduino.h"
 #include <TM1638.h>
 
-#define DEBUG_SERIAL_BTN 1
+//#define DEBUG_SERIAL_BTN 1
 
 typedef enum {
    BTN_NONE = 0,
-   BTN_ON_PRESS,
-   BTN_ON_CLICK,
-   BTN_ON_HOLD,
-   BTN_RELEASE 
+   BTN_ON_PRESS = 0b00000001,
+   BTN_ON_CLICK = 0b00000010,
+   BTN_ON_HOLD  = 0b00000100,
+   BTN_RELEASE  = 0b00001000 
 }SBUTTON_CLICK;
 
 
@@ -25,24 +25,22 @@ class My_Button {
      uint16_t time_bounce;
      uint16_t time_long_click;
 
-     virtual char get_btn_state(){
-       return digitalRead(Pin);
-     };
+     virtual char get_btn_state(){ return digitalRead(Pin); };
+  public :
+    SBUTTON_CLICK state = BTN_NONE ;
+    
   public :
      My_Button(uint8_t pin,uint16_t time_bounce_in = 50, uint16_t time_long_click_in = 2000);
-     void begin();
-     void Loop();
-
-     SBUTTON_CLICK state = BTN_NONE ;
+     
+     void process();
+        
 };     
 
 class TM1638_Button : public My_Button {
   private :
      TM1638* p_dysplay_module;
      
-     virtual char get_btn_state(){
-       return p_dysplay_module->getButtons() != Pin;
-     };
+     virtual char get_btn_state(){  return p_dysplay_module->getButtons() != Pin; };
      
   public :
     TM1638_Button (TM1638* p_dysplay_module_in, uint8_t pin,uint16_t time_bounce_in = 50, uint16_t time_long_click_in = 2000) : My_Button(pin, time_bounce_in, time_long_click_in) {
