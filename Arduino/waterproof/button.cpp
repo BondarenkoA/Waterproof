@@ -39,7 +39,8 @@ void My_Button::process() {
        time_of_last_press    = current_time;
 
        state = BTN_ON_PRESS;
-
+       event = state;
+       
        return;
    }
   
@@ -54,7 +55,8 @@ void My_Button::process() {
       state_is_long_pressed = true;
       
       state = BTN_ON_HOLD;
-
+      event = state;
+      
       return;
    }
 
@@ -75,10 +77,12 @@ void My_Button::process() {
           state = BTN_RELEASE;
        }
 
+       event = state;
+       
        return;
        
    }
 
-   state = BTN_NONE;
+   event = BTN_NONE;
 }     
 

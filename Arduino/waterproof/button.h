@@ -11,7 +11,7 @@ typedef enum {
    BTN_ON_CLICK = 0b00000010,
    BTN_ON_HOLD  = 0b00000100,
    BTN_RELEASE  = 0b00001000 
-}SBUTTON_CLICK;
+}BUTTON_STATE;
 
 
 class My_Button {
@@ -27,10 +27,11 @@ class My_Button {
 
      virtual char get_btn_state(){ return digitalRead(Pin); };
   public :
-    SBUTTON_CLICK state = BTN_NONE ;
+    BUTTON_STATE state = BTN_RELEASE ;
+    BUTTON_STATE event = BTN_NONE ;
     
   public :
-     My_Button(uint8_t pin,uint16_t time_bounce_in = 50, uint16_t time_long_click_in = 2000);
+     My_Button(uint8_t pin, uint16_t time_bounce_in = 50, uint16_t time_long_click_in = 2000);
      
      void process();
         

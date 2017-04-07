@@ -1,5 +1,6 @@
 #include <TM1638.h>
 #include "button.h"
+#include "simple_out.h"
 
 #define POWER_DIVIDER 2.0775//коэффициент делителя напряжения для определения напряжения питания. r1/(r1+r2)
 #define WATER_THRESOLD 100 //чуствительность датчиков воды
@@ -8,6 +9,8 @@
 #define COUNT_OF_SENSORS 4
 
 #define SERIAL_RATE 115200
+
+#define DYSPLAY_REFRESH_TIME 200
 
 //#define SERIAL_LOGGING //использования логгирования в COM-порт
 #ifdef SERIAL_LOGGING
@@ -38,9 +41,10 @@
 
 typedef enum {
    DYS_BAT = 1,
-   DYS_SENS = 2,
-   DYS_UP_TIME = 3,
-   DYS_NONE = 4 //должно быть последним режимом, иначе кольцо не сработает
+   DYS_SENS,
+   DYS_UP_TIME,
+   DYS_BEEP_FREQ,
+   DYS_NONE//должно быть последним режимом, иначе кольцо не сработает
 }DYSPLAY_MODE;
 
 
@@ -61,7 +65,9 @@ int g_pow_U = 0;
 byte g_water_sensors_val = 0;
 DYSPLAY_MODE g_dysplay_mode = DYS_BAT;
 byte g_dysplay_sensor_num = 1;
-
+uint32_t g_dysplay_last_time = 0;
+uint16_t g_beeper_freq = 0;
+ 
 int counter = 0;
 byte beep = 0;
 byte alarm = 0;
@@ -72,6 +78,11 @@ TM1638 dysplayModule(7, 6, 5); //TM1638(dataPin, clockPin, strobePin, activateDi
 
 TM1638_Button btn_sel_dysplay_mode(&dysplayModule, 0b00000001);
 TM1638_Button btn_sel_sensor(&dysplayModule, 0b00000010);
+TM1638_Button btn_force_close(&dysplayModule, 0b01000000);
+TM1638_Button btn_force_open(&dysplayModule, 0b10000000);
+
+TM1638_Out led_force_close(&dysplayModule, 6);
+TM1638_Out led_force_open(&dysplayModule, 7);
 
 //**************************************************************************************************
 // Инициализация
@@ -111,10 +122,10 @@ void loop() {
 
   output();
 
-  digitalWrite(g_led13_PIN, HIGH); delay(1);
+  digitalWrite(g_led13_PIN, HIGH);
+  delay(2);
   digitalWrite(g_led13_PIN, LOW);
   
-  delay(1);
 }
 
 
@@ -147,6 +158,10 @@ void read_input(){
 //кнопки
   btn_sel_dysplay_mode.process();
   btn_sel_sensor.process();
+  btn_force_close.process();
+  btn_force_open.process();
+
+  
 }
 
 //**************************************************************************************************
@@ -178,7 +193,7 @@ void process(){
     digitalWrite(g_valve2_PIN, HIGH);
   };
 
-  if (btn_sel_dysplay_mode.state & BTN_ON_CLICK){
+  if (btn_sel_dysplay_mode.event & BTN_ON_CLICK){
       if (g_dysplay_mode == DYS_NONE)
         g_dysplay_mode = DYS_BAT;
       else
@@ -188,10 +203,22 @@ void process(){
       SERIAL_PRINTLN(g_dysplay_mode);
   }
 
-  if (btn_sel_sensor.state & BTN_ON_CLICK){
+  if (g_dysplay_mode == DYS_SENS
+      && btn_sel_sensor.event & BTN_ON_CLICK){
     g_dysplay_sensor_num++;
     if(g_dysplay_sensor_num > COUNT_OF_SENSORS ) g_dysplay_sensor_num = 1;
   }
+
+  if (g_dysplay_mode == DYS_BEEP_FREQ
+      && ( btn_sel_sensor.state & BTN_ON_HOLD || btn_sel_sensor.event & BTN_ON_CLICK )){
+
+      g_beeper_freq += 1;
+      if(g_beeper_freq > 9999) g_beeper_freq = 0;      
+  }
+      
+  if (btn_force_close.event & BTN_ON_HOLD) led_force_close.blink(100);
+  if (btn_force_open.state & BTN_ON_HOLD) led_force_open.blink(100);
+  
 }
 
 //**************************************************************************************************
@@ -202,36 +229,43 @@ void output(){
   
   SERIAL_PRINTLN("> output()");
 
-  switch (g_dysplay_mode){
-    case DYS_BAT: sprintf(str_disp, "BAT %4d", g_pow_U);
-                  dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
-                  break;
-    case DYS_SENS: sprintf(str_disp, "S-%1d %4d", g_dysplay_sensor_num, sensor_read(g_dysplay_sensor_num));
-                  dysplayModule.setDisplayToString(str_disp, 0b00000000, 0);
-                  break;
-    case DYS_UP_TIME: sprintf(str_disp, "t %6d", millis() / 1000);
-                  dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
-                  break;
-    case DYS_NONE: dysplayModule.clearDisplay();
-                  break;
+  if(allow_refresh_TM1638()){
+      switch (g_dysplay_mode){
+          case DYS_BAT: sprintf(str_disp, "BAT %4d", g_pow_U);
+                        dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
+                        break;
+          case DYS_SENS: sprintf(str_disp, "S-%1d %4d", g_dysplay_sensor_num, sensor_read(g_dysplay_sensor_num));
+                        dysplayModule.setDisplayToString(str_disp, 0b00000000, 0);
+                        break;
+          case DYS_UP_TIME: sprintf(str_disp, "t %6d", millis() / 1000);
+                        dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
+                        break;
+          case DYS_BEEP_FREQ: sprintf(str_disp, "BEEP%4d", g_beeper_freq);
+                        dysplayModule.setDisplayToString(str_disp, 0b00000000, 0);
+                        break;
+          case DYS_NONE: dysplayModule.clearDisplay();
+                        break;
+      }
   }
-
   
   
-  if (btn_sel_dysplay_mode.state & BTN_ON_PRESS) dysplayModule.setLEDs(0b00001111);//debug string
-  if (btn_sel_dysplay_mode.state & BTN_RELEASE){ //debug string
+  if (btn_sel_dysplay_mode.event & BTN_ON_PRESS) dysplayModule.setLEDs(0b00001111);//debug string
+  if (btn_sel_dysplay_mode.event & BTN_RELEASE){ //debug string
     dysplayModule.setLEDs(0x00);
   }
+ 
+  led_force_close.process();
+  led_force_open.process();
 
-  
-  
   if (g_state & WATER_ALARM){
     
-    tone(g_beeper_PIN, 400, 50);
+    tone(g_beeper_PIN, g_beeper_freq, 100);
+    /*Громкие частоты:
+     * 1071 1083 ~2900 ~3100 ~9500
+     
+     */
     
     dysplayModule.setLEDs(g_water_sensors_val);
-    delay(100);
-    dysplayModule.setLEDs(0x00);
     
   }
 
@@ -280,5 +314,16 @@ int powerReadX100(){
   rawU = rawU * ( POWER_DIVIDER / SAMPLES_COUNT );
   
   return rawU;
+}
+
+bool allow_refresh_TM1638(){
+  if( millis() > g_dysplay_last_time + DYSPLAY_REFRESH_TIME ){
+    g_dysplay_last_time = millis();
+
+    return true;
+  }
+
+  return false;
+  
 }
 
