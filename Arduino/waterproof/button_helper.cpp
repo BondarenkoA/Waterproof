@@ -1,4 +1,4 @@
-#include "button.h"
+#include "button_helper.h"
 
 /**
  * Конструктор класса кнопки
@@ -8,7 +8,7 @@
  * time_bounce_in - таймаут дребезга контактов. По умолчанию 50мс
  * time_long_click_in - время длинного нажатия клавиши. По умолчанию 2000мс. Если 0 то отключено.
  */
-My_Button::My_Button(uint8_t pin,uint16_t time_bounce_in, uint16_t time_long_click_in){
+Button_Helper::Button_Helper(uint8_t pin,uint16_t time_bounce_in, uint16_t time_long_click_in){
    Pin               = pin;
    state_is_pressed  = false;
    state_is_long_pressed  = false;
@@ -23,7 +23,7 @@ My_Button::My_Button(uint8_t pin,uint16_t time_bounce_in, uint16_t time_long_cli
  * Действие производимое в цикле или по таймеру
  * возвращает BTN_NONE если кнопка не нажата и событие нажатие или динного нажатия кнопки
 */
-void My_Button::process() {
+void Button_Helper::process() {
    uint32_t current_time = millis();
    bool pin_state = get_btn_state();
 
@@ -54,7 +54,7 @@ void My_Button::process() {
 #endif 
       state_is_long_pressed = true;
       
-      state = BTN_ON_HOLD;
+      state = BTN_ON_HOLD | BTN_ON_PRESS;
       event = state;
       
       return;

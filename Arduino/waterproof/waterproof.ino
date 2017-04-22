@@ -1,6 +1,6 @@
 #include <TM1638.h>
-#include "button.h"
-#include "simple_out.h"
+#include "button_helper.h"
+#include "out_helper.h"
 
 #define POWER_DIVIDER 2.0775//коэффициент делителя напряжения для определения напряжения питания. r1/(r1+r2)
 #define WATER_THRESOLD 100 //чуствительность датчиков воды

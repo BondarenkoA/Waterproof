@@ -1,6 +1,6 @@
-#include "simple_out.h"
+#include "out_helper.h"
 
-Simple_Out::Simple_Out(uint8_t pin){
+Out_Helper::Out_Helper(uint8_t pin){
   m_pin = pin;
 
   m_time_to_on = 0;
@@ -9,12 +9,12 @@ Simple_Out::Simple_Out(uint8_t pin){
 }
 
 
-void Simple_Out::set_state(uint8_t state_in){
+void Out_Helper::set_state(uint8_t state_in){
     digitalWrite(m_pin, state_in);
 }
 
 
-void Simple_Out::blink(uint16_t on_time, uint16_t off_time = 0, uint8_t count = 0, uint16_t bit_patern = 0){
+void Out_Helper::blink(uint16_t on_time, uint16_t off_time = 0, uint8_t count = 0, uint16_t bit_patern = 0){
     set_state(HIGH);
     m_on_time = on_time;
     m_off_time = 0;
@@ -22,12 +22,12 @@ void Simple_Out::blink(uint16_t on_time, uint16_t off_time = 0, uint8_t count = 
     m_time_to_off = millis() + on_time;
 }
 
-void Simple_Out::off(){
+void Out_Helper::off(){
     digitalWrite(m_pin, LOW);
     m_state = OUT_OFF;
 }
 
-void Simple_Out::process(){
+void Out_Helper::process(){
     uint32_t is_time = millis();
 
     if( m_time_to_off 
