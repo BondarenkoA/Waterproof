@@ -1,3 +1,4 @@
+#include <avr/wdt.h>
 #include <TM1638.h>
 #include "button_helper.h"
 #include "out_helper.h"
@@ -89,7 +90,7 @@ TM1638_Out led_force_open(&dysplayModule, 7);
 // Инициализация
 //**************************************************************************************************
 void setup() {
-
+  
   for(int i = 0; i < COUNT_OF_SENSORS; i++) pinMode(g_water_sensor_PIN[i], INPUT);
   
   pinMode(g_power_sensor_PIN, INPUT);
@@ -108,6 +109,8 @@ void setup() {
   SERIAL_LOG_BEGIN
 
   dysplayModule.setupDisplay(true, 0);
+
+  wdt_enable(WDTO_8S);
 }
 
 //**************************************************************************************************
@@ -130,6 +133,8 @@ void loop() {
   digitalWrite(g_led13_PIN, LOW);
 
   g_loop_time = millis() - g_loop_start_time;
+
+  wdt_reset();
 }
 
 
