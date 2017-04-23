@@ -66,7 +66,7 @@ byte g_water_sensors_val = 0;
 DYSPLAY_MODE g_dysplay_mode = DYS_BAT;
 byte g_dysplay_sensor_num = 1;
 uint32_t g_dysplay_last_time = 0;
-uint16_t g_beeper_freq = 0;
+uint16_t g_beeper_freq = 500;
  
 int counter = 0;
 byte beep = 0;
@@ -193,7 +193,7 @@ void process(){
     digitalWrite(g_valve2_PIN, HIGH);
   };
 
-  if (btn_sel_dysplay_mode.event & BTN_ON_CLICK){
+  if (btn_sel_dysplay_mode.is_state(BTN_ON_CLICK) ){
       if (g_dysplay_mode == DYS_NONE)
         g_dysplay_mode = DYS_BAT;
       else
@@ -204,20 +204,20 @@ void process(){
   }
 
   if (g_dysplay_mode == DYS_SENS
-      && btn_sel_sensor.event & BTN_ON_CLICK){
+      && btn_sel_sensor.is_state(BTN_ON_PRESS) ){
     g_dysplay_sensor_num++;
     if(g_dysplay_sensor_num > COUNT_OF_SENSORS ) g_dysplay_sensor_num = 1;
   }
 
   if (g_dysplay_mode == DYS_BEEP_FREQ
-      && ( btn_sel_sensor.state & BTN_ON_HOLD || btn_sel_sensor.event & BTN_ON_CLICK )){
+      && ( btn_sel_sensor.is_state(BTN_HOLD) || btn_sel_sensor.is_state(BTN_ON_PRESS) )){
 
       g_beeper_freq += 1;
       if(g_beeper_freq > 9999) g_beeper_freq = 0;      
   }
       
-  if (btn_force_close.event & BTN_ON_HOLD) led_force_close.blink(100);
-  if (btn_force_open.state & BTN_ON_HOLD) led_force_open.blink(100);
+  if (btn_force_close.is_state(BTN_ON_HOLD) ) led_force_close.blink(100);
+  if (btn_force_open.is_state(BTN_ON_HOLD) ) led_force_open.blink(100);
   
 }
 
@@ -249,8 +249,8 @@ void output(){
   }
   
   
-  if (btn_sel_dysplay_mode.event & BTN_ON_PRESS) dysplayModule.setLEDs(0b00001111);//debug string
-  if (btn_sel_dysplay_mode.event & BTN_RELEASE){ //debug string
+  if ( btn_sel_dysplay_mode.is_state(BTN_ON_PRESS) ) dysplayModule.setLEDs(0b00001111);//debug string
+  if (btn_sel_dysplay_mode.is_state(BTN_RELEASE) ){ //debug string
     dysplayModule.setLEDs(0x00);
   }
  

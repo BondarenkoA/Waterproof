@@ -19,9 +19,11 @@ Button_Helper::Button_Helper(uint8_t pin,uint16_t time_bounce_in, uint16_t time_
 }
 
 
+bool Button_Helper::is_state(BUTTON_STATE state_in){
+  return ( state & state_in ) == state_in;
+}
 /**
  * Действие производимое в цикле или по таймеру
- * возвращает BTN_NONE если кнопка не нажата и событие нажатие или динного нажатия кнопки
 */
 void Button_Helper::process() {
    uint32_t current_time = millis();
@@ -39,7 +41,6 @@ void Button_Helper::process() {
        time_of_last_press    = current_time;
 
        state = BTN_ON_PRESS;
-       event = state;
        
        return;
    }
@@ -54,8 +55,7 @@ void Button_Helper::process() {
 #endif 
       state_is_long_pressed = true;
       
-      state = BTN_ON_HOLD | BTN_ON_PRESS;
-      event = state;
+      state = BTN_ON_HOLD;
       
       return;
    }
@@ -72,17 +72,15 @@ void Button_Helper::process() {
 
        if( time_long_click == 0 || 
            (current_time - time_of_last_press) < time_long_click ){  
-          state = BTN_ON_CLICK | BTN_RELEASE;
+          state = BTN_ON_CLICK;
        }else{
-          state = BTN_RELEASE;
+          state = BTN_ON_RELEASE;
        }
-
-       event = state;
        
        return;
        
    }
 
-   event = BTN_NONE;
+   state = state & ~BTN_ON_MASK;
 }     
 
