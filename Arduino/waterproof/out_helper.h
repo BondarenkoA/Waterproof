@@ -7,7 +7,8 @@
 typedef enum {
     OUT_OFF = 0,
     OUT_ON,
-    OUT_DISABLE
+    OUT_DISABLE,
+    OUT_RUNING
 }OUT_STATE;
 
 /*
