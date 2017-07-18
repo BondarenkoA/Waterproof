@@ -24,12 +24,16 @@
 
 
 //Состояния
-#define STAND_BY          0b00000011
-#define BEGIN_WATER_ALARM 0b00000100
-#define WATER_ALARM       0b00001100
-#define END_WATER_ALARM   0b00001000
-#define LOW_BATTERY       0b00110000
-#define MANUAL_CONTROL    0b11000000
+#define WS_DRY          1
+#define WS_WET          2
+#define WS_AFTER_WET    3
+#define POW_LINE        4
+#define POW_BAT         5
+#define POW_LOW_BAT     6
+#define INP_FORCE_OPEN  7
+#define INP_FORCE_CLOSE 8
+#define INP_ON_WATCH    9
+
 
 typedef enum {
    DYS_BAT = 1,
@@ -43,25 +47,30 @@ typedef enum {
 
 //============= Конфигурация ============================
 #define POWER_DIVIDER     2.0775//коэффициент делителя напряжения для определения напряжения питания. r1/(r1+r2)
-#define WATER_THRESOLD    100 //чуствительность датчиков воды
-#define BATTERY_THRESOLD  1100 //уровень напряжения считающийся низким, и приводящий к аварийному перекрытию кранов и т.д.
+#define WATER_THRESOLD    200 //чуствительность датчиков воды
+#define BATTERY_THRESOLD  1230 //уровень напряжения считающийся питанием от сети
+#define BATTERY_LOW_THRESOLD  1190 //уровень напряжения считающийся низким, и приводящий к аварийному перекрытию кранов и т.д.
 #define MAX_SENSOR_VAL    1023
 #define COUNT_OF_SENSORS  4
 #define DYSPLAY_REFRESH_TIME 200
+#define WATER_READ_INTERVAL 1000
 
-byte g_power_sensor_PIN       = A1; //пин АЦП для считывания с делителя напряжения питания
-byte g_water_sensors_PhA_PIN  = 11; //Фаза A питания датчиков воды
-byte g_water_sensors_PhB_PIN  = 12; //Фаза B питания датчиков воды
-byte g_water_sensor_PIN[COUNT_OF_SENSORS] = {A7, A6, A5, A4}; //Датчики воды
 byte g_beeper_PIN             = A0; //Pin beeper
+byte g_power_sensor_PIN       = A1; //пин АЦП для считывания с делителя напряжения питания
+byte g_water_sensor_PIN[COUNT_OF_SENSORS] = {A7, A6, A5, A4}; //Датчики воды
 byte g_valve1_PIN             = 2; //Задвижка 1
 byte g_valve2_PIN             = 3; //Задвижка 2
-byte g_led13_PIN              = 13; 
-
+byte g_led4_PIN               = 4;
+byte g_sensor_btn_PIN         = 8;
+byte g_water_sensors_PhA_PIN  = 11; //Фаза A питания датчиков воды( со стороны датчика )
+byte g_water_sensors_PhB_PIN  = 12; //Фаза B питания датчиков воды( со стороны резисторов )
+byte g_led13_PIN              = 13;
 
 //============= Глобальные переменные =======================
-byte g_state = STAND_BY;
-byte g_old_state = STAND_BY;
+byte g_state_WS  = WS_DRY;
+byte g_state_POW = POW_LINE;
+byte g_state_INP = INP_ON_WATCH;
+
 int  g_pow_U = 0;
 byte g_water_sensors_val = 0;
 DYSPLAY_MODE g_dysplay_mode = DYS_LOOP_TIME;
@@ -72,6 +81,7 @@ uint16_t g_beeper_freq = 500;
 
 uint16_t g_loop_start_time = 0;
 uint16_t g_loop_time = 0;
+uint16_t g_water_prev_read_time = 0;
  
 byte g_water_sensors_Phase = 0;
 
@@ -85,6 +95,7 @@ TM1638_Button btn_force_open(&dysplayModule, 0b10000000);
 
 TM1638_Out led_force_close(&dysplayModule, 6);
 TM1638_Out led_force_open(&dysplayModule, 7);
+//TM1638_Out led_force_open(&dysplayModule, 7);
 
 //**************************************************************************************************
 // Инициализация
@@ -94,11 +105,13 @@ void setup() {
   for(int i = 0; i < COUNT_OF_SENSORS; i++) pinMode(g_water_sensor_PIN[i], INPUT);
   
   pinMode(g_power_sensor_PIN, INPUT);
+  pinMode(g_sensor_btn_PIN, INPUT_PULLUP);
   
   pinMode(g_water_sensors_PhA_PIN, OUTPUT);
   pinMode(g_water_sensors_PhB_PIN, OUTPUT);
 
   pinMode(g_led13_PIN, OUTPUT);
+  pinMode(g_led4_PIN, OUTPUT);
   pinMode(g_beeper_PIN, OUTPUT);
   pinMode(g_valve1_PIN, OUTPUT);
   pinMode(g_valve2_PIN, OUTPUT);
@@ -110,6 +123,8 @@ void setup() {
 
   dysplayModule.setupDisplay(true, 0);
 
+  g_water_prev_read_time = millis();
+  
   wdt_enable(WDTO_8S);
 }
 
@@ -128,9 +143,12 @@ void loop() {
 
   output();
 
-  digitalWrite(g_led13_PIN, HIGH);
-  delay(2);
-  digitalWrite(g_led13_PIN, LOW);
+  //digitalWrite(g_led13_PIN, digitalRead(g_sensor_btn_PIN));
+  //digitalWrite(g_led4_PIN, digitalRead(g_sensor_btn_PIN));
+  
+  //digitalWrite(g_led13_PIN, HIGH);
+  //delay(2);
+  //digitalWrite(g_led13_PIN, LOW);
 
   g_loop_time = millis() - g_loop_start_time;
 
@@ -152,17 +170,33 @@ void read_input(){
   
   for(int i = COUNT_OF_SENSORS; i > 0 ; i--){
     g_water_sensors_val = g_water_sensors_val << 1;
-    if(sensor_read(i) > WATER_THRESOLD){
+    if(sensor_read_V2(i) > WATER_THRESOLD){
        g_water_sensors_val++;
     }
   }
   
   SERIAL_PRINT("Sensor = "); SERIAL_PRINTLN2(g_water_sensors_val, BIN);
+
+  if( g_water_sensors_val ){
+    g_state_WS = WS_WET;
+  }else{
+    if( g_state_WS == WS_WET ){
+      g_state_WS = WS_AFTER_WET;
+    }
+  }
   
 //напряжение питания
 
   g_pow_U = powerReadX100();
   SERIAL_PRINT("Pow U = "); SERIAL_PRINTLN( (float)g_pow_U / 100 );
+
+  if( g_pow_U > BATTERY_THRESOLD){
+    g_state_POW = POW_LINE;
+  }else if(g_pow_U > BATTERY_LOW_THRESOLD){
+    g_state_POW = POW_BAT;
+  }else{
+    g_state_POW = POW_LOW_BAT;
+  }
   
 //кнопки
   btn_sel_dysplay_mode.process();
@@ -177,7 +211,7 @@ void read_input(){
 // determine_state()
 //**************************************************************************************************
 void determine_state(){
-  SERIAL_PRINTLN("> determine_state()");
+  /*SERIAL_PRINTLN("> determine_state()");
 
   g_old_state = g_state;
 
@@ -185,7 +219,7 @@ void determine_state(){
     g_state = g_state | WATER_ALARM;
   }else{
     g_state = g_state & ~WATER_ALARM;
-  }
+  }*/
 }
 
 //**************************************************************************************************
@@ -194,7 +228,7 @@ void determine_state(){
 void process(){
   SERIAL_PRINTLN("> process()");
 
-  if (g_state & WATER_ALARM){
+  if (g_state_WS != WS_DRY ){
     digitalWrite(g_valve1_PIN, LOW);
     digitalWrite(g_valve2_PIN, LOW);
   }else{
@@ -228,10 +262,16 @@ void process(){
   if (btn_force_close.is_state(BTN_ON_PRESS) ) {
     led_force_close.blink(100, 400, 20);
     led_force_open.off();
+    
+    digitalWrite(g_valve1_PIN, LOW);
+    digitalWrite(g_valve2_PIN, LOW);
   }
   if (btn_force_open.is_state(BTN_ON_PRESS) ){
-        led_force_close.off();
-        led_force_open.blink(100, 400, 20);
+    led_force_close.off();
+    led_force_open.blink(100, 400, 20);
+    
+    digitalWrite(g_valve1_PIN, HIGH);
+    digitalWrite(g_valve2_PIN, HIGH);
   }
   
 }
@@ -273,7 +313,7 @@ void output(){
   led_force_close.process();
   led_force_open.process();
   
-  if (g_state & WATER_ALARM){
+  if (g_state_WS != WS_DRY){
     
     tone(g_beeper_PIN, g_beeper_freq, 100);
     /*Громкие частоты:
@@ -296,7 +336,7 @@ void output(){
 // int sensor_read(byte sensorNum) Считывание датчика воды
 //**************************************************************************************************
 int sensor_read(byte sensorNum){
-  #define SAMPLES_COUNT 10 //количество считываний напряжения для усреднения
+  #define SAMPLES_COUNT 3 //количество считываний напряжения для усреднения
   int val = 0;
 
   for(int i = 0; i < SAMPLES_COUNT; i++){
@@ -304,7 +344,9 @@ int sensor_read(byte sensorNum){
     
     digitalWrite(g_water_sensors_PhA_PIN, g_water_sensors_Phase);
     digitalWrite(g_water_sensors_PhB_PIN, !g_water_sensors_Phase);
-  
+
+    delay(2);
+    
     if(!g_water_sensors_Phase) {//если фаза отрицательная - инвертируем значение датчика, т.к. поменялась полярность 
       val += MAX_SENSOR_VAL - analogRead(g_water_sensor_PIN[sensorNum-1]);  
     }else{
@@ -317,6 +359,28 @@ int sensor_read(byte sensorNum){
   val = val / SAMPLES_COUNT;
   
   SERIAL_PRINT("Sensor");SERIAL_PRINT(sensorNum);SERIAL_PRINT(" = ");SERIAL_PRINTLN(val);
+  return val;
+}
+
+//**************************************************************************************************
+// int sensor_read_V2(byte sensorNum) Считывание датчика воды второй вариант
+//**************************************************************************************************
+int sensor_read_V2(byte sensorNum){
+  #define SAMPLES_COUNT 10 //количество считываний напряжения для усреднения
+  int val = 0;
+
+  digitalWrite(g_water_sensors_PhA_PIN, LOW);
+  digitalWrite(g_water_sensors_PhB_PIN, HIGH);
+    
+  for(int i = 0; i < SAMPLES_COUNT; i++){
+    val += MAX_SENSOR_VAL - analogRead(g_water_sensor_PIN[sensorNum-1]);
+  }
+
+  val = val / SAMPLES_COUNT;
+    
+  digitalWrite(g_water_sensors_PhB_PIN, LOW);
+  
+  SERIAL_PRINT("Sensor_V2");SERIAL_PRINT(sensorNum);SERIAL_PRINT(" = ");SERIAL_PRINTLN(val);
   return val;
 }
 
