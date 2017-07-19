@@ -289,7 +289,7 @@ void output(){
           case DYS_BAT: sprintf(str_disp, "BAT %4d", g_pow_U);
                         dysplayModule.setDisplayToString(str_disp, 0b00000100, 0);
                         break;
-          case DYS_SENS: sprintf(str_disp, "S-%1d %4d", g_dysplay_sensor_num, sensor_read(g_dysplay_sensor_num));
+          case DYS_SENS: sprintf(str_disp, "S-%1d %4d", g_dysplay_sensor_num, sensor_read_V2(g_dysplay_sensor_num));
                         dysplayModule.setDisplayToString(str_disp, 0b00000000, 0);
                         break;
           case DYS_UP_TIME: sprintf(str_disp, "t %6d", millis() / 1000);
@@ -388,7 +388,7 @@ int sensor_read_V2(byte sensorNum){
 // int powerReadX100() Определение напряжения питания х100(умножаем на 100 чтобы целым числом хранить сотые доли)
 //**************************************************************************************************
 int powerReadX100(){
-  #define SAMPLES_COUNT 10 //количество считываний напряжения для усреднения
+  #define SAMPLES_COUNT 50 //количество считываний напряжения для усреднения
   int rawU = 0;
 
   for(int i = 0; i < SAMPLES_COUNT; i++){
