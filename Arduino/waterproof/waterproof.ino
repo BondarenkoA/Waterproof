@@ -46,7 +46,7 @@ typedef enum {
 
 
 //============= Конфигурация ============================
-#define POWER_DIVIDER     2.0775//коэффициент делителя напряжения для определения напряжения питания. r1/(r1+r2)
+#define POWER_DIVIDER     8.0311//коэффициент делителя напряжения для определения напряжения питания. r1/(r1+r2)
 #define WATER_THRESOLD    200 //чуствительность датчиков воды
 #define BATTERY_THRESOLD  1230 //уровень напряжения считающийся питанием от сети
 #define BATTERY_LOW_THRESOLD  1190 //уровень напряжения считающийся низким, и приводящий к аварийному перекрытию кранов и т.д.
@@ -54,6 +54,7 @@ typedef enum {
 #define COUNT_OF_SENSORS  4
 #define DYSPLAY_REFRESH_TIME 200
 #define WATER_READ_INTERVAL 1000
+#define WATER_ALARM_TIME_THRESOLD 2000
 
 byte g_beeper_PIN             = A0; //Pin beeper
 byte g_power_sensor_PIN       = A1; //пин АЦП для считывания с делителя напряжения питания
@@ -77,11 +78,11 @@ DYSPLAY_MODE g_dysplay_mode = DYS_LOOP_TIME;
 
 byte     g_dysplay_sensor_num = 1;
 uint32_t g_dysplay_last_time = 0;
-uint16_t g_beeper_freq = 500;
+uint16_t g_beeper_freq = 1083;
 
 uint16_t g_loop_start_time = 0;
 uint16_t g_loop_time = 0;
-uint16_t g_water_prev_read_time = 0;
+uint16_t g_water_alarm_start_time = 0;
  
 byte g_water_sensors_Phase = 0;
 
@@ -122,8 +123,6 @@ void setup() {
   SERIAL_LOG_BEGIN
 
   dysplayModule.setupDisplay(true, 0);
-
-  g_water_prev_read_time = millis();
   
   wdt_enable(WDTO_8S);
 }
@@ -177,7 +176,14 @@ void read_input(){
   
   SERIAL_PRINT("Sensor = "); SERIAL_PRINTLN2(g_water_sensors_val, BIN);
 
-  if( g_water_sensors_val ){
+  if( g_water_sensors_val && g_water_alarm_start_time == 0 ){
+    g_water_alarm_start_time = millis();
+  }else if (!g_water_sensors_val && g_water_alarm_start_time > 0){
+    g_water_alarm_start_time = 0;
+  }
+  
+  if( g_water_alarm_start_time > 0 && 
+      (millis() - g_water_alarm_start_time > WATER_ALARM_TIME_THRESOLD )){
     g_state_WS = WS_WET;
   }else{
     if( g_state_WS == WS_WET ){
@@ -366,7 +372,7 @@ int sensor_read(byte sensorNum){
 // int sensor_read_V2(byte sensorNum) Считывание датчика воды второй вариант
 //**************************************************************************************************
 int sensor_read_V2(byte sensorNum){
-  #define SAMPLES_COUNT 10 //количество считываний напряжения для усреднения
+  #define SAMPLES_COUNT 5 //количество считываний напряжения для усреднения
   int val = 0;
 
   digitalWrite(g_water_sensors_PhA_PIN, LOW);
@@ -374,6 +380,7 @@ int sensor_read_V2(byte sensorNum){
     
   for(int i = 0; i < SAMPLES_COUNT; i++){
     val += MAX_SENSOR_VAL - analogRead(g_water_sensor_PIN[sensorNum-1]);
+    delay(1);
   }
 
   val = val / SAMPLES_COUNT;
